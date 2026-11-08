@@ -1,5 +1,10 @@
 # Wazuh Manager Toolkit
 
+![Wazuh 4.x](https://img.shields.io/badge/Wazuh-4.x%20(tested%204.14)-3595F7)
+![Bash](https://img.shields.io/badge/Bash-manager%20scripts-4EAA25?logo=gnubash&logoColor=white)
+![MITRE ATT&CK](https://img.shields.io/badge/MITRE%20ATT%26CK-mapped-C00000)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow)
+
 **Manager-side** (Linux) companion to
 [wazuh-endpoint-toolkit](https://github.com/TanZero7/wazuh-endpoint-toolkit):
 custom detection rules, integrations and verification scripts for a Wazuh
@@ -32,6 +37,25 @@ flowchart LR
 | [fim](fim) | verify only | Confirms Wazuh's built-in FIM rules (550/553/554) are present |
 | [sysmon](sysmon) | verify only | Confirms Wazuh's built-in Sysmon ruleset (~150 rules) is present |
 | [vulnerability-detection](vulnerability-detection) | verify / diagnose | Checks the built-in CVE module is enabled and producing data, with a step-by-step diagnosis path for agents that "look empty" |
+
+## Detection coverage
+
+Custom rules shipped in this repo (built-in Wazuh rules for FIM, Sysmon and
+vulnerability detection are verified, not modified).
+
+| Rule | Level | Detects | MITRE ATT&CK |
+|---|---|---|---|
+| 100200 / 100201 / 100202 | 12 / 7 / 4 | Suricata IDS signature hit, by severity (high / medium / low) | per signature |
+| 100205 | 10 | 8+ IDS alerts from one source in 60 s: scan or sustained attack | - |
+| 100211 | 8 | Possible DNS tunnelling (abnormally long DNS label) | [T1071.004](https://attack.mitre.org/techniques/T1071/004/), [T1048.003](https://attack.mitre.org/techniques/T1048/003/) |
+| 100212 | 5 | DNS query to a frequently abused TLD | - |
+| 100221 | 4 | TLS connection with no SNI | - |
+| 100231 | 7 | Executable or archive downloaded over cleartext HTTP | [T1105](https://attack.mitre.org/techniques/T1105/) |
+| 100232 | 6 | Scripted HTTP client (curl, PowerShell, python-requests…) | [T1071.001](https://attack.mitre.org/techniques/T1071/001/) |
+| 100210 / 100220 / 100230 | 3 | DNS / TLS / HTTP visibility events (searchable network telemetry) | - |
+| 100700 | 12 | YARA rule matched on a file FIM saw change | [T1204.002](https://attack.mitre.org/techniques/T1204/002/), [T1059](https://attack.mitre.org/techniques/T1059/) |
+| 100701 | 3 | YARA scan completed, no match (audit trail) | - |
+| 100092 / 100093 | 12 | VirusTotal active response removed a threat / failed to remove it | - |
 
 ## How to deploy
 
@@ -73,4 +97,4 @@ sudo bash <script>.sh
 
 ## License
 
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). Release history: [CHANGELOG.md](CHANGELOG.md).
