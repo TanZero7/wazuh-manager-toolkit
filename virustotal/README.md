@@ -11,6 +11,26 @@ moment VirusTotal reports it malicious, instead of just alerting on it. See
 "Active Response (optional)" below — this part needs both server and
 endpoint pieces, not server-only.
 
+## What is VirusTotal, and what does the manager do?
+
+**VirusTotal** checks a file's hash against ~70 antivirus engines. This runs
+entirely **from the manager**: Wazuh's built-in `integratord` sends the
+SHA-256 of every file FIM reports (never the file itself) and raises an alert on
+positives. Optional **Active Response** then tells the agent to delete the file.
+Endpoint half and full walkthrough:
+[endpoint virustotal-active-response](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/virustotal-active-response#what-is-virustotal-and-what-is-active-response).
+
+```mermaid
+flowchart LR
+    F["FIM 550 / 554<br/>from an agent"] --> I["integratord<br/>(this manager)"]
+    I -->|"SHA-256 only"| VT["VirusTotal API"]
+    VT --> R{"Result"}
+    R -->|"no record / clean"| C["87103 / 87104"]
+    R -->|"positives"| P["87105 level 12"]
+    P -.->|"optional Active Response"| AR["agent runs remove-threat.exe"]
+    AR -.-> O["657 fired, 553 deleted,<br/>100092 / 100093 outcome"]
+```
+
 ---
 
 ## Start here

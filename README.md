@@ -6,6 +6,22 @@ custom detection rules, integrations and verification scripts for a Wazuh
 SIEM, one folder per capability. Everything that runs on Windows endpoints lives
 in the endpoint repo; everything here runs on the Wazuh manager.
 
+## Where this fits
+
+```mermaid
+flowchart LR
+    EP["Windows endpoints<br/>(wazuh-endpoint-toolkit)<br/>FIM, Sysmon, YARA, Suricata"] -->|"events"| M
+    subgraph M["Wazuh manager (this repo)"]
+        direction TB
+        R["Custom rules<br/>Suricata 100200-100232<br/>YARA 100700-100701<br/>VirusTotal AR 100092-100093"]
+        C["Checks for built-in rules<br/>FIM, Sysmon, Vulnerability Detection"]
+        I["Integrations<br/>VirusTotal + Active Response"]
+    end
+    I <-->|"SHA-256 lookups"| VT["VirusTotal"]
+    I -.->|"scan / delete commands"| EP
+    M --> D["Dashboard"]
+```
+
 ## Capabilities
 
 | Folder | Type | What it does |

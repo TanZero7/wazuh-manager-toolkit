@@ -3,6 +3,37 @@
 > **Order:** do this manager side **first** → then the endpoint side, [wazuh-endpoint-toolkit → suricata](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/suricata) → then verify from the endpoint.
 > Step-by-step with expected `[ OK ]` output: **[INTEGRATION-GUIDE.md](INTEGRATION-GUIDE.md)**.
 
+## What is Suricata, and what does the manager do?
+
+**Suricata** is an open-source network IDS. On each endpoint it inspects network
+traffic against ~52,000 Emerging Threats signatures and logs every DNS lookup,
+TLS connection and HTTP request to `eve.json`, which the agent forwards. Full
+explanation: [endpoint suricata → What is Suricata?](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/suricata#what-is-suricata).
+
+**Why this manager side is required:** Wazuh's built-in Suricata rules keep
+signature alerts but rate DNS, TLS and HTTP events **level 0, meaning decode and
+discard**. These custom rules sit on top of the built-in ones and keep that
+traffic, graded by importance:
+
+```mermaid
+flowchart LR
+    E["eve.json events from agents"] --> B["Built-in rules 86600-86604"]
+    B -->|"alert"| S["100200-100205<br/>signature alerts by severity, scans"]
+    B -->|"dns (level 0)"| D["100210-100212<br/>DNS, tunnelling, abused TLDs"]
+    B -->|"tls (level 0)"| T["100220-100221<br/>HTTPS sites (SNI)"]
+    B -->|"http (level 0)"| H["100230-100232<br/>HTTP, exe downloads, scripted clients"]
+    S --> X["Dashboard"]
+    D --> X
+    T --> X
+    H --> X
+```
+
+Without this step: intrusion alerts only, and **no network visibility at all**.
+
+---
+
+## Details
+
 **Required** for the Suricata endpoint IDS to be useful. Wazuh's built-in Suricata
 rules for DNS, TLS and HTTP are level 0 ("decode then discard"), so without these
 custom rules you get signature alerts and no network visibility at all.
