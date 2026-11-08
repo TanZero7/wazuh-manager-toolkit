@@ -1,0 +1,1 @@
+{"integration":"yara","yara_rule":"Test_Rule_Example","yara_scan_result":"match","yara_scanned_file":"C:\\Users\\test\\Downloads\\sample.exe","agent":"TESTHOST","timestamp":"2026-01-01T00:00:00.0000000+00:00"}

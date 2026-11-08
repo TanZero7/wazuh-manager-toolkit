@@ -1,0 +1,31 @@
+<!--
+  VirusTotal Active Response outcome alerts.
+  ID range: 100092-100093 (matches Wazuh's own official VirusTotal +
+  Active Response documentation exactly, including the IDs).
+
+  WHY THIS FILE EXISTS
+  =====================
+  Without these rules, a successful or failed remove-threat.exe run is only
+  visible as the generic rule 657 ("Active response: active-response/bin/
+  remove-threat.exe - add"), which does not say whether the removal actually
+  succeeded, and does not surface the file path in the alert description.
+  These rules read the active-response log line itself and split it into a
+  clear success/failure alert with the file path included.
+
+  Install to:  /var/ossec/etc/rules/local_rules_virustotal.xml  (on the MANAGER)
+  Owner/perms: wazuh:wazuh 0660
+  Then:        systemctl restart wazuh-manager
+-->
+<group name="virustotal,">
+  <rule id="100092" level="12">
+      <if_sid>657</if_sid>
+      <match>Successfully removed threat</match>
+      <description>$(parameters.program) removed threat located at $(parameters.alert.data.virustotal.source.file)</description>
+  </rule>
+
+  <rule id="100093" level="12">
+    <if_sid>657</if_sid>
+    <match>Error removing threat</match>
+    <description>Error removing threat located at $(parameters.alert.data.virustotal.source.file)</description>
+  </rule>
+</group>

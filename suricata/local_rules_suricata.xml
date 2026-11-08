@@ -1,0 +1,211 @@
+<!--
+  Custom Wazuh rules for Suricata endpoint IDS + network visibility.
+
+  Install to:  /var/ossec/etc/rules/local_rules_suricata.xml   (on the MANAGER)
+  Owner/perms: wazuh:wazuh 0660
+  Then:        systemctl restart wazuh-manager
+
+  NOTE ON STYLE: no double hyphen appears anywhere inside these comments, because XML
+  forbids that sequence in a comment body and Wazuh parses this file as XML. One stray
+  occurrence stops the whole ruleset from loading, so prose here uses single hyphens
+  and headings are underlined with equals signs.
+
+  WHY THIS FILE EXISTS
+  ====================
+  Wazuh's built-in Suricata ruleset (ruleset/rules/0475-suricata_rules.xml) defines:
+
+      86600  level 0   base: any decoded eve JSON event
+      86601  level 3   event_type: alert     <= the ONLY one that surfaces
+      86602  level 0   event_type: http
+      86603  level 0   event_type: dns
+      86604  level 0   event_type: tls
+
+  Level 0 means "decoded, but generate no alert". So http/dns/tls events are parsed and
+  then silently dropped; they never reach alerts.json and never reach the dashboard.
+  Out of the box you get IDS signature alerts and no network visibility whatsoever.
+
+  This file chains off those level 0 parents and re-grades them to level 3 so DNS, TLS SNI
+  and HTTP activity actually lands in the dashboard. It also re-grades Suricata's own
+  signature alerts by the severity Suricata assigned, because 86601 flattens a
+  "known malware C2" and a "peer to peer traffic" notice to the same level 3.
+
+  RESERVED RANGE: 100200 to 100299. Wazuh requires custom rule IDs >= 100000.
+
+  FIELD MATCHING NOTES
+  ====================
+  * Wazuh <field> uses OS_Regex by default, NOT PCRE. In OS_Regex, "\." means ANY
+    CHARACTER, so "\.+" is the idiomatic presence check (the built-in 86600 uses exactly
+    that on the timestamp field). Do not read "\.+" as "one or more literal dots".
+  * For real regular expressions use type="pcre2", as the heuristics below do.
+  * Nested eve JSON is flattened with dots by Wazuh's json decoder: {"tls":{"sni":"x"}}
+    is matched as field name "tls.sni".
+  * $(field) interpolates into <description>.
+
+  VOLUME WARNING
+  ==============
+  On a busy endpoint the DNS and TLS rules are chatty by design. That is the point; it
+  is what gives you "what is this machine talking to". Tuning levers, least to most blunt:
+    1. Add <options>no_full_log</options> to 100210/100220. Keeps the indexed fields,
+       drops the raw event. Big storage saving, slightly harder troubleshooting.
+    2. Drop those rules to level 2 so they are decoded and counted but not alerted, then
+       raise only the ones you care about.
+    3. Add <if_sid> child rules with <field name="tls.sni">noisy-domain</field> at
+       level 0 to suppress specific destinations.
+  The Suricata side is already tuned: eve.json logs DNS queries only (not answers), and
+  flow/netflow are disabled. See suricata/eve-log-block.yaml.
+-->
+
+<group name="suricata,suricata_custom,">
+
+  <!-- ==================================================================
+       1. SEVERITY ESCALATION FOR SURICATA SIGNATURE ALERTS
+
+       Suricata sets alert.severity 1 (most severe) through 3 (least).
+       Built-in 86601 reports all of them at level 3. These re-grade so a
+       trojan C2 hit does not look identical to a policy notice.
+       ================================================================== -->
+
+  <rule id="100200" level="12">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^1$</field>
+    <description>Suricata: HIGH severity IDS alert - $(alert.signature)</description>
+    <group>ids,network_ids,suricata_alert,attack,</group>
+  </rule>
+
+  <rule id="100201" level="7">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^2$</field>
+    <description>Suricata: MEDIUM severity IDS alert - $(alert.signature)</description>
+    <group>ids,network_ids,suricata_alert,</group>
+  </rule>
+
+  <rule id="100202" level="4">
+    <if_sid>86601</if_sid>
+    <field name="alert.severity">^3$</field>
+    <description>Suricata: LOW severity IDS alert - $(alert.signature)</description>
+    <group>ids,network_ids,suricata_alert,</group>
+  </rule>
+
+  <!-- Sustained alerting from one source. Catches port scans and brute force,
+       which produce many individually unremarkable alerts. -->
+  <rule id="100205" level="10" frequency="8" timeframe="60">
+    <if_matched_sid>86601</if_matched_sid>
+    <same_source_ip />
+    <description>Suricata: 8+ IDS alerts from $(src_ip) within 60s, possible scan or sustained attack</description>
+    <group>ids,network_ids,suricata_alert,recon,</group>
+  </rule>
+
+
+  <!-- ==================================================================
+       2. DNS VISIBILITY   (parent 86603, level 0)
+
+       Suricata is configured to emit DNS queries only, so every dns event
+       here is a lookup this host made. Matching on rrname presence rather
+       than dns.type keeps this working across eve dns schema versions 2/3.
+       ================================================================== -->
+
+  <rule id="100210" level="3">
+    <if_sid>86603</if_sid>
+    <field name="dns.rrname">\.+</field>
+    <description>Suricata: DNS query for $(dns.rrname) [$(dns.rrtype)] by $(src_ip)</description>
+    <group>suricata_dns,network_visibility,dns,</group>
+  </rule>
+
+  <!-- Heuristic: an abnormally long leftmost label is a classic DNS tunnelling
+       and data exfiltration shape (iodine, dnscat2, most C2 over DNS). -->
+  <rule id="100211" level="8">
+    <if_sid>100210</if_sid>
+    <field name="dns.rrname" type="pcre2">^[^.]{40,}\.</field>
+    <description>Suricata: Possible DNS tunnelling, abnormally long label in $(dns.rrname)</description>
+    <group>suricata_dns,dns,exfiltration,</group>
+    <mitre>
+      <id>T1071.004</id>
+      <id>T1048.003</id>
+    </mitre>
+  </rule>
+
+  <!-- Heuristic: TLDs disproportionately used for malware and phishing.
+       EXPECT FALSE POSITIVES. Plenty of legitimate sites use .xyz and .top.
+       Tune the list for your environment or drop the level to 3. -->
+  <rule id="100212" level="5">
+    <if_sid>100210</if_sid>
+    <field name="dns.rrname" type="pcre2">\.(?:top|xyz|club|online|site|tk|ml|ga|cf|gq|zip|mov|work|surf|cam|rest|monster|quest|cyou|sbs)$</field>
+    <description>Suricata: DNS query to frequently abused TLD - $(dns.rrname)</description>
+    <group>suricata_dns,dns,bad_tld,</group>
+  </rule>
+
+
+  <!-- ==================================================================
+       3. TLS VISIBILITY   (parent 86604, level 0)
+
+       On a modern endpoint this is THE signal for "what site is this machine
+       visiting". Nearly everything is HTTPS, so the SNI is usually the only
+       plaintext hostname on the wire.
+
+       ORDERING: do NOT rely on file order to separate these two. Wazuh does not
+       guarantee that sibling rules under the same if_sid are evaluated in the
+       order they appear; verified with wazuh-logtest, 100221 was tried first and
+       100220 was never reached, so every TLS event was reported as "no SNI".
+       They are made mutually exclusive with negate instead, which is order
+       independent: 100220 requires tls.sni, 100221 requires its absence.
+       ================================================================== -->
+
+  <rule id="100220" level="3">
+    <if_sid>86604</if_sid>
+    <field name="tls.sni">\.+</field>
+    <description>Suricata: TLS connection to $(tls.sni) ($(dest_ip):$(dest_port)) by $(src_ip)</description>
+    <group>suricata_tls,network_visibility,tls,</group>
+  </rule>
+
+  <!-- TLS with no SNI at all. Normal for some apps and for IP literal access,
+       but also how a lot of malware C2 and tooling connects. Worth seeing.
+       negate="yes" makes this fire ONLY when tls.sni is absent, so it can never
+       shadow 100220 regardless of which order Wazuh evaluates them in. -->
+  <rule id="100221" level="4">
+    <if_sid>86604</if_sid>
+    <field negate="yes" name="tls.sni">\.+</field>
+    <description>Suricata: TLS connection with no SNI to $(dest_ip):$(dest_port) by $(src_ip)</description>
+    <group>suricata_tls,network_visibility,tls,no_sni,</group>
+  </rule>
+
+
+  <!-- ==================================================================
+       4. HTTP VISIBILITY   (parent 86602, level 0)
+
+       Sparse on a modern endpoint because almost everything is HTTPS. What
+       does still show up here is disproportionately interesting: plaintext
+       downloads, captive portals, OS and updater callbacks, IoT chatter, and
+       malware that never bothered with TLS.
+       ================================================================== -->
+
+  <rule id="100230" level="3">
+    <if_sid>86602</if_sid>
+    <description>Suricata: HTTP $(http.http_method) http://$(http.hostname)$(http.url) by $(src_ip)</description>
+    <group>suricata_http,network_visibility,http,</group>
+  </rule>
+
+  <!-- Executable or archive fetched over plaintext HTTP. Higher signal than a
+       generic request: this is how a lot of commodity malware stages. -->
+  <rule id="100231" level="7">
+    <if_sid>100230</if_sid>
+    <field name="http.url" type="pcre2">(?i)\.(?:exe|dll|ps1|bat|cmd|scr|hta|jar|vbs|msi|zip|7z|rar)(?:\?|$)</field>
+    <description>Suricata: Executable or archive over cleartext HTTP - $(http.hostname)$(http.url)</description>
+    <group>suricata_http,http,malware_download,</group>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+  </rule>
+
+  <!-- Scripted or non browser user agents reaching out. Catches curl, wget,
+       PowerShell download cradles, python-requests and similar. -->
+  <rule id="100232" level="6">
+    <if_sid>100230</if_sid>
+    <field name="http.http_user_agent" type="pcre2">(?i)(?:powershell|curl|wget|python-requests|python-urllib|libwww-perl|winhttp|bitsadmin|certutil|Go-http-client)</field>
+    <description>Suricata: Scripted HTTP client "$(http.http_user_agent)" to $(http.hostname) by $(src_ip)</description>
+    <group>suricata_http,http,scripted_client,</group>
+    <mitre>
+      <id>T1071.001</id>
+    </mitre>
+  </rule>
+
+</group>

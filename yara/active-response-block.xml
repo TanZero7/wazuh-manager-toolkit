@@ -1,0 +1,28 @@
+<!--
+  Paste this block into /var/ossec/etc/ossec.conf on the MANAGER, inside the
+  main <ossec_config> section, near the other <command> definitions (search
+  for the existing "netsh" or "firewall-drop" <command> blocks and add this
+  right after them). Then: /var/ossec/bin/wazuh-analysisd -t   (config test)
+  and  systemctl restart wazuh-manager.
+
+  Why this isn't applied by an automated script: it edits the manager's main
+  config file, which every other integration also depends on -- a bad
+  automated merge here can take the whole manager down. A rules file (like
+  local_rules_yara.xml) is safe to drop into etc/rules/ unattended because a
+  bad one only breaks that one rules file's checks; ossec.conf is not that
+  forgiving. This is the same reason Wazuh's own official documentation asks
+  you to paste active-response blocks in by hand.
+-->
+
+<command>
+  <name>yara-scan</name>
+  <executable>yara-scan.cmd</executable>
+  <timeout_allowed>no</timeout_allowed>
+</command>
+
+<active-response>
+  <disabled>no</disabled>
+  <command>yara-scan</command>
+  <location>local</location>
+  <rules_id>550,554</rules_id>
+</active-response>

@@ -1,0 +1,39 @@
+<!--
+  -  YARA integration rules
+  -  ID range: 100700-100701 (avoid Wazuh's reserved <100000; pick a range
+  -  that doesn't collide with any other custom rules file you already have)
+-->
+<group name="wazuhkit,yara,">
+
+  <rule id="100700" level="12">
+    <decoded_as>json</decoded_as>
+    <field name="integration">yara</field>
+    <!-- [fix] was "\.+" (one-or-more LITERAL DOTS), a real bug, not
+         a style choice. YARA rule identifiers can only be alphanumeric or
+         underscore (the YARA language itself forbids "." in a rule name), so
+         "\.+" could never match any real yara_rule value, meaning this rule
+         could never fire on an actual match no matter how correctly
+         everything else was set up. Confirmed independently:
+         install-manager-rules.sh's own embedded wazuh-logtest self-check
+         (server/logtest-samples/yara-match.json, yara_rule="Test_Rule_Example")
+         expects this to produce rule 100700; with the old pattern that check
+         would fail too. Fixed to ".+" (any non-empty value), which is what
+         was clearly intended. -->
+    <field name="yara_rule">.+</field>
+    <description>YARA: rule $(yara_rule) matched on $(yara_scanned_file)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1059</id>
+    </mitre>
+    <group>yara_alert,gpg13_4.2,</group>
+  </rule>
+
+  <rule id="100701" level="3">
+    <decoded_as>json</decoded_as>
+    <field name="integration">yara</field>
+    <field name="yara_scan_result">^clean$</field>
+    <description>YARA: $(yara_scanned_file) scanned, no match</description>
+    <group>yara_scan,</group>
+  </rule>
+
+</group>
