@@ -17,17 +17,24 @@ in the endpoint repo; everything here runs on the Wazuh manager.
 | [sysmon](sysmon) | verify only | Confirms Wazuh's built-in Sysmon ruleset (~150 rules) is present |
 | [vulnerability-detection](vulnerability-detection) | verify / diagnose | Checks the built-in CVE module is enabled and producing data, with a step-by-step diagnosis path for agents that "look empty" |
 
-## Usage
+## How to deploy
+
+**Always: manager side first (this repo) → endpoint side → verify from the endpoint.**
+
+1. **[guides/MANAGER-SETUP-GUIDE.md](guides/MANAGER-SETUP-GUIDE.md)**: every manager step in order, with the expected `[ OK ]` output.
+2. Then the endpoint guides in
+   [wazuh-endpoint-toolkit → guides](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/guides),
+   which end with the verification steps.
+
+Only need one capability? Each folder has a README and an `INTEGRATION-GUIDE.md`
+covering just that capability's manager side, ending with a **Next →** link to its
+endpoint folder.
 
 ```bash
 git clone https://github.com/TanZero7/wazuh-manager-toolkit.git
 cd wazuh-manager-toolkit/<capability>
 sudo bash <script>.sh
 ```
-
-Each folder's README says exactly which script to run and what output to expect.
-Step-by-step guides covering both sides together are in the endpoint repo's
-[`guides/`](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/guides).
 
 ## How the scripts behave
 

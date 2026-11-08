@@ -1,13 +1,21 @@
-# VirusTotal — Integration Guide
+# VirusTotal: Manager Integration Guide
 
-> Wazuh's official, built-in VirusTotal integration — one config block, no custom code.
+> Wazuh's official, built-in VirusTotal integration (one config block, no custom code), plus optional Active Response.
+
+> **Install order: manager first (this guide), then endpoint, then verify**
+>
+> 1. **Manager side**: this guide, [section 3](#3-install-manager).
+> 2. **Endpoint side** (only if you use Active Response):
+>    [wazuh-endpoint-toolkit → virustotal-active-response](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/virustotal-active-response).
+> 3. **Verify**: done from the endpoint, with an EICAR test file:
+>    [endpoint guide, verification](https://github.com/TanZero7/wazuh-endpoint-toolkit/blob/main/virustotal-active-response/INTEGRATION-GUIDE.md#3-verification).
 
 | | |
 |---|---|
 | **Wazuh** | 4.x manager |
-| **Custom files needed** | None — this follows Wazuh's own documentation exactly |
+| **Custom files needed** | None for alert-only: this follows Wazuh's own documentation exactly |
 | **Trigger** | FIM rules 550 (modified) / 554 (added) |
-| **Verified** | 11 September 2026 — EICAR test, 65/67 AV engines flagged it, rule 87105 |
+| **Verified** | 11 September 2026: EICAR test, 65/67 AV engines flagged it, rule 87105 |
 
 ## 1. Overview
 
@@ -19,26 +27,30 @@
               │
               ▼
    rule 87103 (no records) / 87104 (0 positives) / 87105 (positives found)
+              │
+              ▼ optional Active Response (section 4)
+   657 (remove-threat.exe fired) → 553 (file deleted) → 100092 / 100093 (outcome)
 ```
 
-Wazuh ships this integration as a first-party feature — `integratord` and
-`virustotal.py` are already installed with every manager. There's genuinely
-nothing to build here; this kit exists purely to make the one required
-config step repeatable and safe.
+Wazuh ships this integration as a first-party feature: `integratord` and
+`virustotal.py` are already installed with every manager. There's
+nothing to build here; these scripts make the config steps repeatable and safe.
 
 ## 2. Requirements
 
 | Requirement | Why | Check |
 |---|---|---|
-| Root on the manager | Editing `ossec.conf` | — |
+| Root on the manager | Editing `ossec.conf` | `sudo -v` |
 | A VirusTotal API key | Wazuh calls VT's API directly | Free or paid plan |
 | Internet access from the manager | API calls happen server-side | `curl -s https://www.virustotal.com` |
-| FIM enabled on at least one agent | This is what generates the trigger event | see `fim/` in [wazuh-endpoint-toolkit](https://github.com/TanZero7/wazuh-endpoint-toolkit) |
+| FIM on the endpoints | FIM events are the trigger | [wazuh-endpoint-toolkit → fim](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/fim) |
 
-## 3. Install
+## 3. Install (manager)
+
+### 3.1 Alert-only integration
 
 ```bash
-cd wazuh-manager-toolkit/virustotal
+cd ~/wazuh-manager-toolkit/virustotal
 sudo bash add-virustotal-integration.sh <YOUR_API_KEY>
 ```
 
@@ -55,96 +67,86 @@ config-tests before restarting, and refuses to run if a `virustotal`
 integration block already exists (edit that one by hand instead of risking
 a duplicate).
 
-## 4. Verification
+When it asks `Restart wazuh-manager now? [y/N]`, type **`y`** (the same applies to both scripts in section 4).
 
-### Fire-test with EICAR
+**Confirm it worked** (OK / FAIL). A good run prints, in order:
 
-EICAR is a standard, industry-wide benign test string every AV engine
-recognizes as "this is a test," not real malware — safe to use.
+```
+    [ OK ] No existing block -- safe to add
+    [ OK ] Backed up to /var/ossec/backup/ossec.conf.<timestamp>.bak
+    [ OK ] Integration block inserted
+    [ OK ] config test passed
+    [ OK ] wazuh-manager running
+```
 
-1. On the endpoint, temporarily exclude a throwaway test folder from
-   Defender (it will otherwise quarantine the file before FIM/VirusTotal
-   ever see it):
-   ```powershell
-   $t = "$env:USERPROFILE\Downloads\vt_test"; New-Item -ItemType Directory -Force $t
-   Add-MpPreference -ExclusionPath $t
-   ```
-2. Write the EICAR test string to a file in that folder (get the exact
-   string from https://www.eicar.org/download-anti-malware-testfile/).
-3. Wait ~15-30 seconds, then check the manager:
-   ```bash
-   grep -a "VirusTotal: Alert" /var/ossec/logs/alerts/alerts.json | tail -5
-   ```
-   Expect rule **87105**, level 12, with a `positives`/`total` ratio and a
-   VirusTotal permalink.
-4. Clean up: delete the file and remove the Defender exclusion.
-   ```powershell
-   Remove-Item $t -Recurse -Force
-   Remove-MpPreference -ExclusionPath $t
-   ```
+Any `[FAIL]` stops the script before the restart, so a bad config never goes live.
+Fix what it says (the backup path is printed) and re-run.
 
-### In the dashboard
+## 4. Active Response (optional): auto-delete instead of alert-only
 
-| Query | Shows |
-|---|---|
-| `rule.groups:virustotal` | every VT lookup result |
-| `rule.id:87105` | actual positive hits |
-| `rule.id:87103` or `87104` | lookups that ran but found nothing (proves the pipeline works even with no hit) |
+> ⚠️ Irreversible and automatic. Make sure alert-only behaviour is confirmed
+> working first (verify from the endpoint), and that you actually want files
+> deleted without a human in the loop, before wiring this up across the fleet.
 
-## 5. Troubleshooting
+```bash
+# Adds the <command>/<active-response> block (fires remove-threat.exe on rule 87105)
+sudo bash add-virustotal-active-response.sh
+
+# Optional but recommended: rules 100092/100093, clear success/failure alerts
+# with the file path, instead of just the generic "Active response fired" rule 657.
+# Straight from Wazuh's own official VirusTotal + Active Response docs, IDs included.
+sudo bash install-manager-rules.sh
+```
+
+**Confirm it worked** (OK / FAIL). `add-virustotal-active-response.sh` should print:
+
+```
+    [ OK ] VirusTotal integration present
+    [ OK ] No existing block -- safe to add
+    [ OK ] Backed up to /var/ossec/backup/virustotal-kit/ossec.conf.<timestamp>.bak
+    [ OK ] Active Response configuration added
+    [ OK ] config test passed
+    [ OK ] wazuh-manager running
+```
+
+and `install-manager-rules.sh`:
+
+```
+    [ OK ] Backed up        (or: No existing file)
+    [ OK ] Installed /var/ossec/etc/rules/local_rules_virustotal.xml
+    [ OK ] config test passed
+    [ OK ] wazuh-manager running
+```
+
+Then confirm the manager's active-response queue connected after the restart:
+```bash
+grep 'queue/alerts/ar' /var/ossec/logs/ossec.log | tail -3
+```
+
+> ⏳ The manager pushes the new active-response config to agents on its own cycle,
+> so endpoints may take **5–10 minutes** to pick it up. That's expected.
+
+**Next →** install the endpoint half on each PC:
+[wazuh-endpoint-toolkit → virustotal-active-response](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/virustotal-active-response).
+The chain only completes once `remove-threat.exe` is on the agent.
+
+## 5. Useful manager-side checks
+
+Once endpoints are set up and the EICAR test has been run from the endpoint:
+
+```bash
+grep -a "VirusTotal: Alert" /var/ossec/logs/alerts/alerts.json | tail -5            # 87105 positives
+grep -a '"id":"657"' /var/ossec/logs/alerts/alerts.json | tail -5                     # AR fired at all
+grep -a '"id":"100092"\|"id":"100093"' /var/ossec/logs/alerts/alerts.json | tail -5  # AR outcome
+```
+
+## 6. Troubleshooting (manager)
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Script refuses to run, says a block already exists | A `virustotal` integration is already configured | Edit `ossec.conf` by hand instead — find it with `grep -A4 virustotal ossec.conf` |
-| No alert at all after the EICAR test | Defender ate the file before FIM saw it, or FIM isn't watching that folder | Confirm the exclusion applied (`Get-MpPreference`), and confirm FIM watches that path (see the FIM kit) |
+| Script refuses to run, says a block already exists | A `virustotal` integration (or `remove-threat` command) is already configured | Edit `ossec.conf` by hand instead; find it with `grep -A4 virustotal ossec.conf` / `grep -A6 remove-threat ossec.conf` |
 | `rule.id:87101` (error) instead of a real result | API key invalid, or rate-limited | Confirm the key works directly: `curl -s "https://www.virustotal.com/api/v3/files/<any-known-hash>" -H "x-apikey: YOUR_KEY"` |
-| `ossec.log` shows `wazuh-integratord: ERROR ... Exit status was: 4` and no `87105` ever appears, even though FIM (`550`/`554`) is firing | Exit code 4 = `ERR_NO_RESPONSE_VT` in the shipped `virustotal.py` — usually the API key itself is being rejected, not a connectivity problem | Test the key directly against VirusTotal, using a hash you already have from a Wazuh FIM alert: `curl -H "x-apikey: YOUR_KEY" "https://www.virustotal.com/api/v3/files/<sha256>"` — a `{"error":{"code":"WrongCredentialsError"}}` response means the key itself is wrong/revoked, not a config bug |
-| `ossec.log` shows `Enabling integration for: 'virustotal'` appearing **twice**, and `grep -c '<name>virustotal</name>' ossec.conf` returns 2 | A hand-rolled repair script used Python's `str.replace()` on `</ossec_config>` with no count limit — `ossec.conf` can legally contain more than one `<ossec_config>` root section, and an unbounded replace inserts into every one of them | Remove all VirusTotal `<integration>` blocks, then re-insert exactly one before only the **first** `</ossec_config>` (`str.replace(marker, block + marker, 1)` — explicit `count=1`). `add-virustotal-integration.sh` in this kit already does this correctly (single, bounded insert); this only bites custom/manual repair scripts. |
-
-## 6. Active Response (optional): auto-delete instead of alert-only
-
-Three pieces, in order:
-
-```bash
-# Server -- adds the <command>/<active-response> block
-sudo bash add-virustotal-active-response.sh
-
-# Server, optional but recommended -- adds rules 100092/100093 (clear
-# success/failure alerts with the file path, instead of just the generic
-# "Active response fired" rule 657). Straight from Wazuh's own official
-# VirusTotal + Active Response documentation, IDs included.
-sudo bash install-manager-rules.sh
-```
-```powershell
-# Endpoint, per machine (wazuh-endpoint-toolkit\virustotal-active-response)
-# -- deploys remove-threat.exe to this agent's active-response\bin\ folder
-powershell -ExecutionPolicy Bypass -File .\scripts\install-active-response.ps1
-```
-
-Once all three are in place, the chain is:
-
-```
-554/550 (FIM: file added/modified)
-        │
-        ▼
-87105 (VirusTotal: positive)
-        │
-        ▼
-657 (Active Response: remove-threat.exe fired)
-        │
-        ▼
-553 (file deleted)               100092 (success) or 100093 (error)
-"Successfully removed threat"     — clear outcome alert with file path
-in the AR log
-```
-
-Verify with:
-```bash
-grep 'queue/alerts/ar' /var/ossec/logs/ossec.log | tail -3        # confirms the manager's AR queue connected after restart
-grep -a '"id":"657"' /var/ossec/logs/alerts/alerts.json | tail -5  # AR fired at all
-grep -a '"id":"100092"\|"id":"100093"' /var/ossec/logs/alerts/alerts.json | tail -5  # AR outcome, if install-manager-rules.sh was run
-```
-
-This is irreversible and automatic — make sure alert-only behavior (§1-5
-above) is confirmed working first, and that you actually want files deleted
-without a human in the loop, before wiring this up across the fleet.
+| `ossec.log` shows `wazuh-integratord: ERROR ... Exit status was: 4` and no `87105` ever appears, even though FIM (`550`/`554`) is firing | Exit code 4 = `ERR_NO_RESPONSE_VT` in the shipped `virustotal.py`: usually the API key itself is being rejected, not a connectivity problem | Test the key directly against VirusTotal, using a hash you already have from a Wazuh FIM alert: `curl -H "x-apikey: YOUR_KEY" "https://www.virustotal.com/api/v3/files/<sha256>"`. A `{"error":{"code":"WrongCredentialsError"}}` response means the key itself is wrong/revoked, not a config bug |
+| `ossec.log` shows `Enabling integration for: 'virustotal'` appearing **twice**, and `grep -c '<name>virustotal</name>' ossec.conf` returns 2 | A hand-rolled repair script used Python's `str.replace()` on `</ossec_config>` with no count limit: `ossec.conf` can legally contain more than one `<ossec_config>` root section, and an unbounded replace inserts into every one of them | Remove all VirusTotal `<integration>` blocks, then re-insert exactly **one**. The scripts here do a single, bounded insert before the last `</ossec_config>`; this only bites custom/manual repair scripts |
+| 657 fires but no 553 / 100092 | `remove-threat.exe` missing on that agent | Install the endpoint half: [virustotal-active-response](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/virustotal-active-response) |
+| Endpoint-side problems (no alert after EICAR, Defender ate the file) | — | See the [endpoint guide's troubleshooting](https://github.com/TanZero7/wazuh-endpoint-toolkit/blob/main/virustotal-active-response/INTEGRATION-GUIDE.md#4-troubleshooting) |

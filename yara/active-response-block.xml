@@ -6,7 +6,7 @@
   and  systemctl restart wazuh-manager.
 
   Why this isn't applied by an automated script: it edits the manager's main
-  config file, which every other integration also depends on -- a bad
+  config file, which every other integration also depends on - a bad
   automated merge here can take the whole manager down. A rules file (like
   local_rules_yara.xml) is safe to drop into etc/rules/ unattended because a
   bad one only breaks that one rules file's checks; ossec.conf is not that

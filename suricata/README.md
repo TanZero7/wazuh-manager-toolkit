@@ -1,5 +1,8 @@
 # Suricata: manager-side visibility rules
 
+> **Order:** do this manager side **first** → then the endpoint side, [wazuh-endpoint-toolkit → suricata](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/suricata) → then verify from the endpoint.
+> Step-by-step with expected `[ OK ]` output: **[INTEGRATION-GUIDE.md](INTEGRATION-GUIDE.md)**.
+
 **Required** for the Suricata endpoint IDS to be useful. Wazuh's built-in Suricata
 rules for DNS, TLS and HTTP are level 0 ("decode then discard"), so without these
 custom rules you get signature alerts and no network visibility at all.
@@ -32,4 +35,4 @@ manager. If it is, run `01-fix-agent-version.ps1` from the endpoint toolkit.
 | `rule.id:100210` | every domain resolved |
 | `rule.level:>=7` | only things worth investigating |
 
-Endpoint side, full guide and troubleshooting: `suricata/` in [wazuh-endpoint-toolkit](https://github.com/TanZero7/wazuh-endpoint-toolkit).
+**Next →** [wazuh-endpoint-toolkit → suricata](https://github.com/TanZero7/wazuh-endpoint-toolkit/tree/main/suricata)

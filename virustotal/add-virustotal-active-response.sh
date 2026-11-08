@@ -9,9 +9,10 @@
 # This is SERVER-SIDE ONLY. It does not install remove-threat.exe itself --
 # that's the endpoint half (see virustotal-active-response/scripts/install-active-response.ps1 in
 # the wazuh-endpoint-toolkit repo), and it must exist in an agent's
-# active-response/bin/remove-threat.exe BEFORE the manager can use it. Run
-# the endpoint script first, or the active-response call will simply fail
-# with nothing to execute.
+# active-response/bin/remove-threat.exe before a deletion can happen.
+# Recommended order: run THIS script first (manager), then the endpoint
+# script on each PC, then verify from the endpoint. Until the endpoint half
+# is installed, the active-response call simply fails with nothing to run.
 #
 # Confirmed working end-to-end on a live deployment (two endpoints): a
 # malicious test file triggered FIM (554) -> VirusTotal (87105) ->
@@ -110,9 +111,10 @@ fi
 step "Done"
 echo "    Confirm the queue connection after restart:"
 echo "      grep 'queue/alerts/ar' /var/ossec/logs/ossec.log | tail -3"
-echo "    Fire-test (needs remove-threat.exe already installed on the agent --"
-echo "    see wazuh-endpoint-toolkit: virustotal-active-response/scripts/install-active-response.ps1): drop an EICAR"
-echo "    test file in a FIM-watched directory, then check:"
+echo "    NEXT: install the endpoint half on each PC (wazuh-endpoint-toolkit:"
+echo "    virustotal-active-response), then verify from the endpoint with EICAR."
+echo "    Agents pick up the new config on the manager's push cycle (5-10 min)."
+echo "    After the test, on the manager:"
 echo "      grep -a '\"id\":\"657\"' /var/ossec/logs/alerts/alerts.json | tail -5"
 echo "    Expect the chain: 554 (added) -> 87105 (VirusTotal positive) ->"
 echo "    657 (Active Response fired) -> 553 (file deleted)."

@@ -8,18 +8,15 @@
   <rule id="100700" level="12">
     <decoded_as>json</decoded_as>
     <field name="integration">yara</field>
-    <!-- [fix] was "\.+" (one-or-more LITERAL DOTS), a real bug, not
-         a style choice. YARA rule identifiers can only be alphanumeric or
-         underscore (the YARA language itself forbids "." in a rule name), so
-         "\.+" could never match any real yara_rule value, meaning this rule
-         could never fire on an actual match no matter how correctly
-         everything else was set up. Confirmed independently:
-         install-manager-rules.sh's own embedded wazuh-logtest self-check
-         (server/logtest-samples/yara-match.json, yara_rule="Test_Rule_Example")
-         expects this to produce rule 100700; with the old pattern that check
-         would fail too. Fixed to ".+" (any non-empty value), which is what
-         was clearly intended. -->
-    <field name="yara_rule">.+</field>
+    <!-- [fix] Must be "\.+", NOT ".+". Wazuh's <field> uses OS_Regex by
+         default, where "\." means ANY character and a bare "." is a LITERAL
+         dot. "\.+" = "field has a non-empty value" (the same idiom the
+         Suricata rules use). An earlier "fix" changed this to ".+", which only
+         matches a value made of literal dots; YARA rule names can't contain
+         dots, so 100700 could never fire. install-manager-rules.sh's
+         wazuh-logtest check (logtest-samples/yara-match.json) catches this:
+         expect "[ OK ] yara-match.json -> rule 100700". -->
+    <field name="yara_rule">\.+</field>
     <description>YARA: rule $(yara_rule) matched on $(yara_scanned_file)</description>
     <mitre>
       <id>T1204.002</id>
